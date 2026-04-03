@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>▣ QRGB ULTRA - Pro Engine v4.5 PRO</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { background: #000; color: #fff; font-family: 'Inter', system-ui, sans-serif; overflow-x: hidden; }
+        canvas { image-rendering: pixelated; }
+        textarea { background: #0a0a0a; border: 1px solid #333; color: #fff; font-family: monospace; resize: none; transition: all 0.3s; }
+        textarea:focus { border-color: #666; background: #111; }
+        
+        .logo-q { color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.6); }
+        .logo-r { color: #FF004D; text-shadow: 0 0 10px #FF004D; }
+        .logo-g { color: #00FF41; text-shadow: 0 0 10px #00FF41; }
+        .logo-b { color: #0088FF; text-shadow: 0 0 10px #0088FF; }
+
+        .scan-line { 
+            position:absolute; left:0; right:0; height:3px; 
+            background:linear-gradient(90deg,transparent,#00ff41,transparent); 
+            box-shadow:0 0 20px #00ff41; 
+            top: 0; z-index: 10; display: none;
+        }
+        .scan-active .scan-line {
+            display: block;
+            animation: scanLine 2.5s linear forwards;
+        }
+        @keyframes scanLine { 0%{top:0%;} 100%{top:100%;} }
+        
+        @keyframes flash { 0%,100%{opacity:0} 50%{opacity:.9} }
+        .flash { animation:flash .3s; }
+        
+        .indicator { width: 12px; height: 12px; border-radius: 50%; background: #222; border: 1px solid rgba(255,255,255,0.1); transition: all 0.3s; }
+        .active-r { background: #ff004d; box-shadow: 0 0 10px #ff004d; }
+        .active-g { background: #00ff41; box-shadow: 0 0 10px #00ff41; }
+        .active-b { background: #0088ff; box-shadow: 0 0 10px #0088ff; }
+        
+        .dropdown-menu { transform: translateY(-10px); opacity: 0; visibility: hidden; transition: all 0.2s ease; }
+        .dropdown-menu.show { transform: translateY(0); opacity: 1; visibility: visible; }
+        
+        .modal-overlay { opacity: 0; visibility: hidden; transition: all 0.3s ease; background: rgba(0,0,0,0.8); backdrop-filter: blur(10px); }
+        .modal-overlay.show { opacity: 1; visibility: visible; }
+        .modal-content { transform: scale(0.9); transition: transform 0.3s ease; }
+        .modal-overlay.show .modal-content { transform: scale(1); }
+
+        .lang-switch { display: flex; gap: 2px; background: #1a1a1a; padding: 2px; border-radius: 6px; font-size: 10px; font-weight: 700; }
+        .lang-btn { padding: 4px 6px; border-radius: 4px; cursor: pointer; opacity: 0.5; transition: all 0.2s; }
+        .lang-btn.active { opacity: 1; background: #333; color: #fff; }
+
+        /* --- НОВЫЕ СТИЛИ ФАСАДА --- */
+        .main-layout {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            flex: 1;
+        }
+
+        /* Порядок элементов через flexbox (визуально кнопки сверху, контейнер снизу) */
+        #central-container { order: 2; }
+        .btn-group-wrapper { order: 1; }
+
+        /* Состояние по умолчанию для центрального контейнера */
+        #central-container {
+            width: 280px;
+            height: 280px;
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), 
+                        height 0.5s cubic-bezier(0.4, 0, 0.2, 1), 
+                        margin 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Расширение и сдвиг при активации сканера */
+        #central-container:has(> :not(.hidden):is(#video, #freeze-frame)) {
+            width: 340px;
+            height: 380px;
+            margin-top: 30px;
+            margin-bottom: 10px;
+        }
+
+        /* Плавное перемещение кнопок вниз при активации */
+        #central-container:has(> :not(.hidden):is(#video, #freeze-frame)) ~ .btn-group-wrapper {
+            transform: translateY(24px);
+        }
+
+        /* --- Рамка захвата --- */
+        .capture-frame-overlay {
+            position: absolute;
+            inset: 20px;
+            z-index: 20;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.4s ease 0.2s;
+        }
+        #central-container:has(> :not(.hidden):is(#video, #freeze-frame)) .capture-frame-overlay {
+            opacity: 1;
+        }
+
+        .bracket {
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            border-color: #00ff41;
+            border-style: solid;
+            border-width: 0;
+            filter: drop-shadow(0 0 4px rgba(0, 255, 65, 0.6));
+        }
+        .top-left { top: 0; left: 0; border-top-width: 4px; border-left-width: 4px; border-top-left-radius: 10px; }
+        .top-right { top: 0; right: 0; border-top-width: 4px; border-right-width: 4px; border-top-right-radius: 10px; }
+        .bottom-left { bottom: 0; left: 0; border-bottom-width: 4px; border-left-width: 4px; border-bottom-left-radius: 10px; }
+        .bottom-right { bottom: 0; right: 0; border-bottom-width: 4px; border-right-width: 4px; border-bottom-right-radius: 10px; }
+
+        /* --- Анимированная зеленая полоса --- */
+        .progress-path {
+            stroke-dasharray: 400; 
+            stroke-dashoffset: 400;
+        }
+        #central-container:has(> :not(.hidden):is(#video, #freeze-frame)) .progress-path {
+            animation: drawBorder 3s linear infinite;
+        }
+        @keyframes drawBorder {
+            to { stroke-dashoffset: 0; }
+        }
+
+        /* --- Маленькая кнопка сохранения --- */
+        #save-btn {
+            position: absolute;
+            bottom: 24px;
+            right: 24px;
+            z-index: 30;
+            background: white;
+            color: black;
+            font-size: 10px;
+            font-weight: 800;
+            padding: 8px 16px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.6);
+            opacity: 0;
+            transform: scale(0.8) translateY(10px);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: none;
+            letter-spacing: 0.08em;
+        }
+        #save-btn:active {
+            transform: scale(0.9) !important;
+        }
+        /* Переопределение скрытия через Tailwind класс, который использует JS */
+        #save-btn:not(.hidden) {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+            pointer-events: auto;
+        }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen p-6">
+
+    <div class="main-layout">
+        
+        <div class="flex items-center justify-between mb-6 relative w-full">
+            <canvas id="mini-qr" width="44" height="44" class="rounded bg-zinc-900 border border-white/10"></canvas>
+            <h1 class="text-xl font-extrabold tracking-widest uppercase text-center flex-1 flex justify-center gap-0.5">
+                <span class="logo-q">Q</span><span class="logo-r">R</span><span class="logo-g">G</span><span class="logo-b">B</span>
+            </h1>
+            <div class="flex items-center gap-3 z-50">
+                <div class="lang-switch">
+                    <div id="lang-uk" class="lang-btn active" onclick="setLanguage('uk')">UK</div>
+                    <div id="lang-en" class="lang-btn" onclick="setLanguage('en')">EN</div>
+                </div>
+                <button id="menu-btn" class="w-10 text-white text-xl active:scale-90 transition-transform">☰</button>
+            </div>
+            
+            <div id="dropdown" class="dropdown-menu absolute top-full right-0 mt-2 w-56 bg-zinc-900 rounded-xl border border-white/10 shadow-2xl z-50 overflow-hidden">
+                <a href="#" onclick="openModal('usage')" class="block px-4 py-3 text-xs text-zinc-300 hover:bg-zinc-800 border-b border-white/5" data-i18n="menu_usage">Як користуватися</a>
+                <a href="#" onclick="openModal('tech')" class="block px-4 py-3 text-xs text-zinc-300 hover:bg-zinc-800 border-b border-white/5" data-i18n="menu_tech">Технологія</a>
+                <button onclick="globalReset()" class="w-full text-left px-4 py-3 text-xs text-red-400 hover:bg-zinc-800 font-bold uppercase tracking-wide" data-i18n="menu_reset">Reset / Очистити всё</button>
+            </div>
+        </div>
+
+        <div class="space-y-3 mb-4 w-full max-w-md">
+            <textarea id="r-text" class="w-full p-4 rounded-xl border-l-4 border-red-600 outline-none h-14 text-sm" placeholder="RED CHANNEL..."></textarea>
+            <textarea id="g-text" class="w-full p-4 rounded-xl border-l-4 border-green-600 outline-none h-14 text-sm" placeholder="GREEN CHANNEL..."></textarea>
+            <textarea id="b-text" class="w-full p-4 rounded-xl border-l-4 border-blue-600 outline-none h-14 text-sm" placeholder="BLUE (PRIORITY)..."></textarea>
+        </div>
+
+        <!-- Центральный контейнер (Визуальный порядок 2) -->
+        <div id="central-container" class="relative bg-zinc-950 rounded-[2rem] p-5 border border-white/5 shadow-2xl overflow-hidden mx-auto">
+            <canvas id="qr-main" width="512" height="512" class="w-full h-full transition-opacity duration-500"></canvas>
+            <video id="video" class="absolute inset-0 w-full h-full object-cover hidden" playsinline></video>
+            <canvas id="freeze-frame" class="absolute inset-0 w-full h-full object-cover hidden z-10"></canvas>
+            
+            <!-- Новая рамка захвата -->
+            <div class="capture-frame-overlay">
+                <div class="bracket top-left"></div>
+                <div class="bracket top-right"></div>
+                <div class="bracket bottom-left"></div>
+                <div class="bracket bottom-right"></div>
+                <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <rect x="2" y="2" width="96" height="96" rx="6" ry="6" fill="none" stroke="#00ff41" stroke-width="1.5" class="progress-path" />
+                </svg>
+            </div>
+
+            <div class="scan-line"></div>
+            <div id="flash-layer" class="absolute inset-0 bg-white opacity-0 pointer-events-none z-50"></div>
+            
+            <!-- Маленькая кнопка сохранения -->
+            <button id="save-btn" onclick="saveQR()" data-i18n="btn_save">Save PNG</button>
+        </div>
+
+        <!-- Кнопки управления (Визуальный порядок 1) -->
+        <div class="btn-group-wrapper grid grid-cols-2 gap-3 w-full max-w-md mt-4 transition-transform duration-500">
+            <button onclick="startCamera()" class="py-4 bg-zinc-900 text-white font-bold rounded-2xl border border-white/10 active:scale-95 text-[10px] uppercase tracking-widest" data-i18n="btn_camera">Open Camera</button>
+            <input type="file" id="file-input" accept="image/*" class="hidden" onchange="handleFile(event)">
+            <button onclick="triggerFileInput()" class="py-4 bg-zinc-900 text-white font-bold rounded-2xl border border-white/10 active:scale-95 text-[10px] uppercase tracking-widest" data-i18n="btn_gallery">Open Gallery</button>
+        </div>
+
+        <div id="result-indicators" class="w-72 mt-4 space-y-2 opacity-0 transition-opacity duration-300">
+            <div id="res-r" class="p-3 bg-zinc-900/60 rounded-xl flex items-center gap-3 border border-white/5">
+                <div class="indicator"></div>
+                <span class="text-[10px] text-zinc-500 uppercase tracking-tighter">R: Waiting...</span>
+            </div>
+            <div id="res-g" class="p-3 bg-zinc-900/60 rounded-xl flex items-center gap-3 border border-white/5">
+                <div class="indicator"></div>
+                <span class="text-[10px] text-zinc-500 uppercase tracking-tighter">G: Waiting...</span>
+            </div>
+            <div id="res-b" class="p-3 bg-zinc-900/60 rounded-xl flex items-center gap-3 border border-blue-500/20">
+                <div class="indicator"></div>
+                <span class="text-[10px] text-zinc-400 uppercase tracking-tighter">B: Priority Ready</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-overlay" class="modal-overlay fixed inset-0 z-[200] flex items-center justify-center p-6">
+        <div class="modal-content w-full max-w-md bg-zinc-900/90 border border-white/10 rounded-3xl p-6 shadow-2xl relative max-h-[80vh] overflow-y-auto">
+            <button onclick="closeModal()" class="absolute top-4 right-4 text-zinc-500 hover:text-white text-xs font-bold border border-white/10 px-3 py-1 rounded-lg" data-i18n="btn_close">CLOSE</button>
+            <h2 id="modal-title" class="text-lg font-bold mb-4"></h2>
+            <div id="modal-body" class="text-sm text-zinc-300 space-y-4"></div>
+        </div>
+    </div>
+
+    <script>
+        const translations = {
+            uk: {
+                menu_usage: "Як користуватися", menu_tech: "Технологія", menu_reset: "Reset / Очистити всё",
+                btn_save: "Зберегти", btn_camera: "Камера", btn_gallery: "Галерея", btn_close: "ЗАКРИТИ",
+                ph_r: "Текст для Red...", ph_g: "Текст для Green...", ph_b: "Текст для Blue...",
+                res_wait: "Очікування...", res_fail: "[!] Не вдалося",
+                m_usage_title: "📝 Інструкція", m_usage_body: "Введіть текст у канали для створення спектрального коду або використовуйте сканер для зчитування RGB-шарів.",
+                m_tech_title: "⚙️ Технологія PRO", m_tech_body: "Використовується адаптивна бінаризація Брэдлі для стабільного зчитування при будь-якому освітленні."
+            },
+            en: {
+                menu_usage: "How to use", menu_tech: "Technology", menu_reset: "Reset / Clear All",
+                btn_save: "Save", btn_camera: "Camera", btn_gallery: "Gallery", btn_close: "CLOSE",
+                ph_r: "Text for Red...", ph_g: "Text for Green...", ph_b: "Text for Blue...",
+                res_wait: "Waiting...", res_fail: "[!] Failed",
+                m_usage_title: "📝 Usage", m_usage_body: "Enter text into channels to create spectral codes or use the scanner to read RGB layers.",
+                m_tech_title: "⚙️ PRO Technology", m_tech_body: "Uses adaptive Bradley thresholding for stable decoding in any lighting conditions."
+            }
+        };
+
+        const els = {
+            r: document.getElementById('r-text'), g: document.getElementById('g-text'), b: document.getElementById('b-text'),
+            main: document.getElementById('qr-main'), mini: document.getElementById('mini-qr'),
+            video: document.getElementById('video'), freeze: document.getElementById('freeze-frame'),
+            centralContainer: document.getElementById('central-container'), flash: document.getElementById('flash-layer'),
+            resultIndicators: document.getElementById('result-indicators'),
+            resR: document.getElementById('res-r'), resG: document.getElementById('res-g'), resB: document.getElementById('res-b')
+        };
+
+        let currentLang = 'uk';
+        let scanning = false;
+        let results = {r:null, g:null, b:null};
+        let analysisReady = false;
+
+        // --- CORE LOGIC: BRADLEY THRESHOLDING ---
+        function applyBradley(imgData, chIdx) {
+            const w = imgData.width, h = imgData.height;
+            const input = imgData.data;
+            const output = new Uint8ClampedArray(w * h * 4);
+            const intImg = new Int32Array(w * h);
+            const s = Math.floor(w / 8), t = 15;
+
+            for (let y = 0; y < h; y++) {
+                let sum = 0;
+                for (let x = 0; x < w; x++) {
+                    sum += input[(y * w + x) * 4 + chIdx];
+                    intImg[y * w + x] = (y > 0 ? intImg[(y - 1) * w + x] : 0) + sum;
+                }
+            }
+
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const x1 = Math.max(x - s, 0), x2 = Math.min(x + s, w - 1);
+                    const y1 = Math.max(y - s, 0), y2 = Math.min(y + s, h - 1);
+                    const count = (x2 - x1) * (y2 - y1);
+                    const sum = intImg[y2 * w + x2] - intImg[y1 * w + x2] - intImg[y2 * w + x1] + intImg[y1 * w + x1];
+                    const val = input[(y * w + x) * 4 + chIdx];
+                    const res = (val * count < sum * (100 - t) / 100) ? 0 : 255;
+                    const idx = (y * w + x) * 4;
+                    output[idx] = output[idx+1] = output[idx+2] = res; output[idx+3] = 255;
+                }
+            }
+            return output;
+        }
+
+        // --- QR GENERATION ---
+        function generateQR() {
+            const texts = [els.r.value, els.g.value, els.b.value];
+            if (!texts.some(t => t.trim())) {
+                els.main.style.opacity = 0;
+                document.getElementById('save-btn').classList.add('hidden');
+                return;
+            }
+            els.main.style.opacity = 1;
+            els.freeze.classList.add('hidden');
+            els.video.classList.add('hidden');
+            
+            let maxVer = 1;
+            texts.forEach(t => {
+                if(!t.trim()) return;
+                const tmp = qrcode(0, 'M'); 
+                tmp.addData(unescape(encodeURIComponent(t))); tmp.make();
+                const v = Math.floor((tmp.getModuleCount() - 17) / 4);
+                if (v > maxVer) maxVer = v;
+            });
+            
+            const ctx = els.main.getContext('2d');
+            ctx.fillStyle = "#000"; ctx.fillRect(0,0,512,512);
+            ctx.globalCompositeOperation = "lighten";
+            
+            texts.forEach((text, i) => {
+                if(!text.trim()) return;
+                const qr = qrcode(maxVer, 'M'); 
+                qr.addData(unescape(encodeURIComponent(text))); qr.make();
+                const mod = 512 / qr.getModuleCount();
+                ctx.fillStyle = i === 0 ? "#FF0000" : (i === 1 ? "#00FF00" : "#0000FF");
+                for (let r = 0; r < qr.getModuleCount(); r++) {
+                    for (let c = 0; c < qr.getModuleCount(); c++) {
+                        if (qr.isDark(r, c)) ctx.fillRect(c * mod, r * mod, mod, mod);
+                    }
+                }
+            });
+            ctx.globalCompositeOperation = "source-over";
+            document.getElementById('save-btn').classList.remove('hidden');
+            els.mini.getContext('2d').drawImage(els.main, 0, 0, 44, 44);
+        }
+
+        // --- SCANNING ENGINE ---
+        function processImageData(img, w, h, isFileScan) {
+            let foundAny = false;
+            [0, 1, 2].forEach(idx => {
+                const ch = ['r', 'g', 'b'][idx];
+                if (results[ch]) return;
+                const mono = applyBradley(img, idx);
+                const code = jsQR(mono, w, h, { inversionAttempts: "attemptBoth" });
+                if (code) { results[ch] = code.data; foundAny = true; }
+            });
+            if(foundAny && (results.b || (results.r && results.g && results.b))) {
+                analysisReady = true;
+                if(!isFileScan) triggerCaptureSequence();
+            }
+            return foundAny;
+        }
+
+        function triggerCaptureSequence() {
+            stopCamera();
+            els.freeze.width = 480; els.freeze.height = 480;
+            const fctx = els.freeze.getContext('2d');
+            const vw = els.video.videoWidth, vh = els.video.videoHeight;
+            const s = Math.min(vw, vh);
+            fctx.drawImage(els.video, (vw-s)/2, (vh-s)/2, s, s, 0, 0, 480, 480);
+            els.video.classList.add('hidden'); els.freeze.classList.remove('hidden');
+            startVisualizationSequence(true);
+        }
+
+        function startVisualizationSequence(success) {
+            els.centralContainer.classList.add('scan-active');
+            setTimeout(() => {
+                els.flash.classList.add('flash');
+                setTimeout(() => {
+                    els.flash.classList.remove('flash');
+                    if(success) updateResultUI(); else handleFailUI();
+                }, 300);
+            }, 2500);
+        }
+
+        function updateResultUI() {
+            ['r', 'g', 'b'].forEach(ch => {
+                const el = els['res' + ch.toUpperCase()];
+                if(results[ch]) {
+                    el.querySelector('span').textContent = results[ch];
+                    el.querySelector('.indicator').className = 'indicator active-'+ch;
+                    el.style.opacity = 1; els[ch].value = results[ch];
+                } else { el.style.opacity = 0.3; }
+            });
+            generateQR();
+        }
+
+        function handleFailUI() {
+            ['r', 'g', 'b'].forEach(ch => {
+                const el = els['res' + ch.toUpperCase()];
+                el.style.opacity = 1;
+                el.querySelector('span').textContent = translations[currentLang].res_fail;
+            });
+        }
+
+        // --- CAMERA & FILE ---
+        async function startCamera() {
+            globalReset(); prepareScannerUI();
+            try {
+                const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                els.video.srcObject = s; els.video.play();
+                scanning = true; requestAnimationFrame(scanFrame);
+            } catch(e) { alert("Camera Error"); }
+        }
+
+        function stopCamera() {
+            scanning = false;
+            if (els.video.srcObject) els.video.srcObject.getTracks().forEach(t => t.stop());
+        }
+
+        function scanFrame() {
+            if (!scanning) return;
+            if (els.video.readyState === els.video.HAVE_ENOUGH_DATA) {
+                const cv = document.createElement('canvas');
+                cv.width = 480; cv.height = 480;
+                const s = Math.min(els.video.videoWidth, els.video.videoHeight);
+                cv.getContext('2d').drawImage(els.video, (els.video.videoWidth-s)/2, (els.video.videoHeight-s)/2, s, s, 0, 0, 480, 480);
+                if(!analysisReady) processImageData(cv.getContext('2d').getImageData(0,0,480,480), 480, 480, false);
+            }
+            requestAnimationFrame(scanFrame);
+        }
+
+        function handleFile(e) {
+            const file = e.target.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const img = new Image();
+                img.onload = () => {
+                    prepareScannerUI();
+                    const s = 1024, cv = document.createElement('canvas');
+                    cv.width = s; cv.height = s;
+                    const ctx = cv.getContext('2d');
+                    const min = Math.min(img.width, img.height);
+                    ctx.drawImage(img, (img.width-min)/2, (img.height-min)/2, min, min, 0, 0, s, s);
+                    els.freeze.width = 480; els.freeze.height = 480;
+                    els.freeze.getContext('2d').drawImage(cv, 0, 0, 480, 480);
+                    els.freeze.classList.remove('hidden'); els.video.classList.add('hidden');
+                    const success = processImageData(ctx.getImageData(0,0,s,s), s, s, true);
+                    startVisualizationSequence(success);
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // --- UTILS ---
+        function setLanguage(l) {
+            currentLang = l;
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (translations[l][key]) el.textContent = translations[l][key];
+            });
+            els.r.placeholder = translations[l].ph_r;
+            els.g.placeholder = translations[l].ph_g;
+            els.b.placeholder = translations[l].ph_b;
+            document.getElementById('lang-uk').className = `lang-btn ${l==='uk'?'active':''}`;
+            document.getElementById('lang-en').className = `lang-btn ${l==='en'?'active':''}`;
+        }
+
+        function prepareScannerUI() {
+            results = {r:null, g:null, b:null}; analysisReady = false;
+            els.main.style.opacity = 0; els.video.classList.remove('hidden');
+            els.resultIndicators.style.opacity = 1;
+            els.centralContainer.classList.remove('scan-active');
+        }
+
+        function globalReset() {
+            stopCamera(); els.r.value = ""; els.g.value = ""; els.b.value = "";
+            generateQR(); els.resultIndicators.style.opacity = 0;
+            els.centralContainer.classList.remove('scan-active');
+            els.main.classList.remove('hidden'); els.freeze.classList.add('hidden');
+            els.video.classList.add('hidden');
+        }
+
+        function openModal(t) {
+            document.getElementById('modal-title').textContent = translations[currentLang]['m_'+t+'_title'];
+            document.getElementById('modal-body').innerHTML = translations[currentLang]['m_'+t+'_body'];
+            document.getElementById('modal-overlay').classList.add('show');
+        }
+        function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); }
+        function triggerFileInput() { document.getElementById('file-input').click(); }
+        function saveQR() { const a = document.createElement('a'); a.download = 'QRGB_PRO.png'; a.href = els.main.toDataURL(); a.click(); }
+
+        [els.r, els.g, els.b].forEach(el => el.addEventListener('input', generateQR));
+        document.getElementById('menu-btn').onclick = (e) => { e.stopPropagation(); document.getElementById('dropdown').classList.toggle('show'); };
+        document.onclick = () => document.getElementById('dropdown').classList.remove('show');
+    </script>
+</body>
+</html>
